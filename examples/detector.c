@@ -353,7 +353,7 @@ void validate_detector_flip(char *datacfg, char *cfgfile, char *weightfile, char
         if(fps) fclose(fps[j]);
     }
     if(coco){
-        fseek(fp, -2, SEEK_CUR); 
+        fseek(fp, -2, SEEK_CUR);
         fprintf(fp, "\n]\n");
         fclose(fp);
     }
@@ -479,7 +479,7 @@ void validate_detector(char *datacfg, char *cfgfile, char *weightfile, char *out
         if(fps) fclose(fps[j]);
     }
     if(coco){
-        fseek(fp, -2, SEEK_CUR); 
+        fseek(fp, -2, SEEK_CUR);
         fprintf(fp, "\n]\n");
         fclose(fp);
     }
@@ -558,6 +558,85 @@ void validate_detector_recall(char *cfgfile, char *weightfile)
     }
 }
 
+void write_detections_stdout(image im, detection *dets, int num, float thresh, char **names, int classes)
+{
+    int i,j;
+
+    for(i = 0; i < num; ++i){
+        char labelstr[4096] = {0};
+        int class = -1;
+        for(j = 0; j < classes; ++j){
+            if (dets[i].prob[j] > thresh){
+                if (class < 0) {
+                    strcat(labelstr, names[j]);
+                    class = j;
+                } else {
+                    strcat(labelstr, ", ");
+                    strcat(labelstr, names[j]);
+                }
+                box b = dets[i].bbox;
+                //printf("%f %f %f %f\n", b.x, b.y, b.w, b.h);
+
+                int left  = (b.x-b.w/2.)*im.w;
+                int right = (b.x+b.w/2.)*im.w;
+                int top   = (b.y-b.h/2.)*im.h;
+                int bot   = (b.y+b.h/2.)*im.h;
+                printf("%s: %.0f%% %i %i %i %i\n", names[j], dets[i].prob[j]*100, left, top, right, bot);
+            }
+        }
+    }
+}
+
+void test_detector_pipe(char *datacfg, char *cfgfile, char *weightfile, float thresh, float hier_thresh, int fullscreen)
+{
+    //printf("--- test_detector_pipe with %s %s %s %f %f %u\n", datacfg, cfgfile, weightfile, thresh, hier_thresh, fullscreen);
+    // stdout line: --- test_detector_pipe with cfg/rocket_league_4.data cfg/yolo_rocket_league_4.cfg /home/ckirmse/ascope_run/train_builds/rocket_league_4/models/yolo_rocket_league_4_final.weights 0.240000 0.500000 0
+
+    list *options = read_data_cfg(datacfg);
+    char *name_list = option_find_str(options, "names", "data/names.list");
+    char **names = get_labels(name_list);
+
+    network *net = load_network(cfgfile, weightfile, 0);
+    set_batch_network(net, 1);
+    srand(2222222);
+    clock_t time;
+    char input_buff[256];
+    float nms=.4;
+    printf("ready:\n");
+    fflush(stdout);
+    while (1) {
+        char *res = fgets(input_buff, sizeof(input_buff), stdin);
+        if (!res) {
+            break;
+        }
+        input_buff[strlen(input_buff) - 1] = '\0'; // remove newline
+
+        image im = load_image_color(input_buff,0,0);
+        image sized = letterbox_image(im, net->w, net->h);
+
+        //image sized = resize_image(im, net.w, net.h);
+        //image sized2 = resize_max(im, net.w);
+        //image sized = crop_image(sized2, -((net.w - sized2.w)/2), -((net.h - sized2.h)/2), net.w, net.h);
+        //resize_network(&net, sized.w, sized.h);
+        layer l = net->layers[net->n-1];
+
+        float *X = sized.data;
+        time=clock();
+
+        network_predict(net, X);
+        printf("%s: Predicted in %f seconds.\n", input_buff, sec(clock()-time));
+        int nboxes = 0;
+        detection *dets = get_network_boxes(net, im.w, im.h, thresh, hier_thresh, 0, 1, &nboxes);
+        if (nms) {
+            do_nms_sort(dets, nboxes, l.classes, nms);
+        }
+        write_detections_stdout(im, dets, nboxes, thresh, names, l.classes);
+        printf("complete: %s\n", input_buff);
+        fflush(stdout);
+        free_image(im);
+        free_image(sized);
+    }
+}
 
 void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filename, float thresh, float hier_thresh, char *outfile, int fullscreen)
 {
@@ -609,7 +688,7 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
         else{
             save_image(im, "predictions");
 #ifdef OPENCV
-            cvNamedWindow("predictions", CV_WINDOW_NORMAL); 
+            cvNamedWindow("predictions", CV_WINDOW_NORMAL);
             if(fullscreen){
                 cvSetWindowProperty("predictions", CV_WND_PROP_FULLSCREEN, CV_WINDOW_FULLSCREEN);
             }
@@ -653,7 +732,7 @@ void censor_detector(char *datacfg, char *cfgfile, char *weightfile, int cam_ind
     }
 
     if(!cap) error("Couldn't connect to webcam.\n");
-    cvNamedWindow(base, CV_WINDOW_NORMAL); 
+    cvNamedWindow(base, CV_WINDOW_NORMAL);
     cvResizeWindow(base, 512, 512);
     float fps = 0;
     int i;
@@ -726,7 +805,7 @@ void extract_detector(char *datacfg, char *cfgfile, char *weightfile, int cam_in
     }
 
     if(!cap) error("Couldn't connect to webcam.\n");
-    cvNamedWindow(base, CV_WINDOW_NORMAL); 
+    cvNamedWindow(base, CV_WINDOW_NORMAL);
     cvResizeWindow(base, 512, 512);
     float fps = 0;
     int i;
@@ -839,6 +918,7 @@ void run_detector(int argc, char **argv)
     char *weights = (argc > 5) ? argv[5] : 0;
     char *filename = (argc > 6) ? argv[6]: 0;
     if(0==strcmp(argv[2], "test")) test_detector(datacfg, cfg, weights, filename, thresh, hier_thresh, outfile, fullscreen);
+    else if(0==strcmp(argv[2], "test_pipe")) test_detector_pipe(datacfg, cfg, weights, thresh, hier_thresh, fullscreen);//Using this option
     else if(0==strcmp(argv[2], "train")) train_detector(datacfg, cfg, weights, gpus, ngpus, clear);
     else if(0==strcmp(argv[2], "valid")) validate_detector(datacfg, cfg, weights, outfile);
     else if(0==strcmp(argv[2], "valid2")) validate_detector_flip(datacfg, cfg, weights, outfile);

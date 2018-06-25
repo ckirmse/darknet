@@ -258,7 +258,7 @@ struct layer{
 
     float * m;
     float * v;
-    
+
     float * bias_m;
     float * bias_v;
     float * scale_m;
@@ -283,7 +283,7 @@ struct layer{
     float *g_cpu;
     float *o_cpu;
     float *c_cpu;
-    float *dc_cpu; 
+    float *dc_cpu;
 
     float * binary_input;
 
@@ -310,7 +310,7 @@ struct layer{
 
     struct layer *input_h_layer;
     struct layer *state_h_layer;
-	
+
     struct layer *wz;
     struct layer *uz;
     struct layer *wr;
@@ -350,7 +350,7 @@ struct layer{
     float *g_gpu;
     float *o_gpu;
     float *c_gpu;
-    float *dc_gpu; 
+    float *dc_gpu;
 
     float *m_gpu;
     float *v_gpu;
@@ -587,7 +587,19 @@ network *load_network(char *cfg, char *weights, int clear);
 load_args get_base_args(network *net);
 
 void free_data(data d);
+#ifdef NODEJS
+typedef struct cmk_node{
+    void *val;
+    struct cmk_node *next;
+    struct cmk_node *prev;
+} cmk_node;
 
+typedef struct list{
+    int size;
+    cmk_node *front;
+    cmk_node *back;
+} list;
+#else
 typedef struct node{
     void *val;
     struct node *next;
@@ -599,7 +611,7 @@ typedef struct list{
     node *front;
     node *back;
 } list;
-
+#endif
 pthread_t load_data(load_args args);
 list *read_data_cfg(char *filename);
 list *read_cfg(char *filename);
